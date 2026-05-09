@@ -1,47 +1,28 @@
 import 'dart:async';
 
-import 'package:flutter/services.dart';
+import 'package:flutter/foundation.dart';
 
+import 'src/secure_application_platform.dart';
+
+/// Thin compatibility shim that forwards to
+/// [SecureApplicationPlatform.instance]. New code should call the platform
+/// instance directly; this static surface is preserved for callers that
+/// imported `SecureApplicationNative` before 5.0.0.
 class SecureApplicationNative {
-  static const MethodChannel _channel =
-      const MethodChannel('secure_application');
+  SecureApplicationNative._();
 
   static void registerForEvents(VoidCallback lock, VoidCallback unlock) {
-    _channel.setMethodCallHandler(
-        (call) => secureApplicationHandler(call, lock, unlock));
+    SecureApplicationPlatform.instance.registerForEvents(lock, unlock);
   }
 
-  static Future<dynamic> secureApplicationHandler(
-      MethodCall methodCall, lock, unlock) async {
-    switch (methodCall.method) {
-      case 'lock':
-        lock();
-        break;
-      case 'unlock':
-        unlock();
-        break;
-      default:
-        throw MissingPluginException('notImplemented');
-    }
-  }
+  static Future<void> secure() => SecureApplicationPlatform.instance.secure();
 
-  static Future secure() {
-    return _channel.invokeMethod('secure');
-  }
+  static Future<void> open() => SecureApplicationPlatform.instance.open();
 
-  static Future open() {
-    return _channel.invokeMethod('open');
-  }
+  static Future<void> lock() => SecureApplicationPlatform.instance.lock();
 
-  static Future lock() {
-    return _channel.invokeMethod('lock');
-  }
+  static Future<void> unlock() => SecureApplicationPlatform.instance.unlock();
 
-  static Future unlock() {
-    return _channel.invokeMethod('unlock');
-  }
-
-  static Future opacity(double opacity) {
-    return _channel.invokeMethod('opacity', {"opacity": opacity});
-  }
+  static Future<void> opacity(double opacity) =>
+      SecureApplicationPlatform.instance.setOpacity(opacity);
 }

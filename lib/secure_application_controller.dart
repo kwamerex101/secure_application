@@ -1,132 +1,156 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
-import 'package:rxdart/rxdart.dart';
-import 'package:secure_application/secure_application_native.dart';
+import 'package:flutter/painting.dart' show Color;
 import 'package:secure_application/secure_application_state.dart';
+import 'package:secure_application/src/secure_application_platform.dart';
+import 'package:secure_application/src/secure_application_restoration.dart';
+import 'package:secure_application/src/value_stream.dart';
 
-enum SecureApplicationAuthenticationStatus { SUCCESS, FAILED, LOGOUT, NONE }
-
-/// main controller for the library
+/// Authentication outcome reported via
+/// [SecureApplicationController.authenticationEvents].
 ///
-/// secured mean that the application will lock if the user switch out of the app
-/// on Android it will prevent user from taking screenshot/recordvideo in the app
-/// on iOS/Android it will hide content in the app switcher
-/// on iOS/Android it will lock [SecureApplicationController.locked] = true when it become active again
-/// when locked if a gate depends on this controller it will display the blurry gate to obfuscate content
+/// **Breaking change in 5.0.0:** values are now lowerCamelCase. Replace
+/// `SUCCESS` → `success`, `FAILED` → `failed`, `LOGOUT` → `logout`,
+/// `NONE` → `none`.
+enum SecureApplicationAuthenticationStatus {
+  success,
+  failed,
+  logout,
+  none,
+}
+
+/// High-level mode summarising the four boolean flags. Useful for `switch`
+/// statements when you don't need to consume each axis individually.
+enum SecureMode {
+  /// Not secured — content visible everywhere, no native protection.
+  open,
+
+  /// Secured but unlocked — native protection on, gate not displayed.
+  secured,
+
+  /// Locked — gate is displayed; user must satisfy `onNeedUnlock` to pass.
+  locked,
+
+  /// Auto-lock temporarily suppressed (e.g. while a file picker is open).
+  paused,
+}
+
+/// Main controller for the library.
+///
+/// "Secured" means the app should hide content when the user switches away.
+/// On Android this also enables FLAG_SECURE (blocks screenshots / screen
+/// recording). On iOS/Android it hides content in the OS app switcher.
+/// On iOS/Android the controller is automatically locked when the app
+/// becomes active again, so any [SecureGate] tied to this controller will
+/// display a frost overlay.
 class SecureApplicationController
     extends ValueNotifier<SecureApplicationState> {
   SecureApplicationController(SecureApplicationState value) : super(value);
 
-  final BehaviorSubject<SecureApplicationAuthenticationStatus>
-      _authenticationEventsController =
-      BehaviorSubject<SecureApplicationAuthenticationStatus>.seeded(
-          SecureApplicationAuthenticationStatus.NONE);
+  final ValueStream<SecureApplicationAuthenticationStatus> _authEvents =
+      ValueStream<SecureApplicationAuthenticationStatus>(
+          SecureApplicationAuthenticationStatus.none);
 
-  /// Broadcast stream that you can use to react to succesffull or unsuccessfull event
-  /// default to [SecureApplicationAuthenticationStatus.NONE]
-  /// [BehaviorSubject] stream so it will always emit last sent value as soon as you listen
-  /// will trigger with the result of [SecureApllication.onNeedUnlock]
+  /// Broadcast stream of authentication outcomes. New listeners are
+  /// immediately notified with the most recent value (default
+  /// [SecureApplicationAuthenticationStatus.none]).
   Stream<SecureApplicationAuthenticationStatus> get authenticationEvents =>
-      _authenticationEventsController.stream;
+      _authEvents.stream;
 
-  final BehaviorSubject<bool> _lockEventsController =
-      BehaviorSubject<bool>.seeded(false);
+  final ValueStream<bool> _lockEvents = ValueStream<bool>(false);
 
-  /// Broadcast stream that you can use to react to lock/unlock event
-  /// default to [false]
-  /// [BehaviorSubject] stream so it will always emit last sent value as soon as you listen
-  Stream<bool> get lockEvents => _lockEventsController.stream;
+  /// Broadcast stream that emits `true` when locked and `false` when
+  /// unlocked. New listeners are immediately notified with the current
+  /// value.
+  Stream<bool> get lockEvents => _lockEvents.stream;
 
-  /// Is the application Locked
-  /// if locked gates will hide their children content
-  /// will be automatically set to yes when user switch back to app
-  /// can be triggered with [lock()] manually to activates gates on your own volution
+  /// Whether the app is currently locked.
   bool get locked => value.locked;
 
-  /// Is the application secured
+  /// Whether native protection is currently engaged.
   bool get secured => value.secured;
 
-  /// if paused lock will not be set when they get back to the app
-  /// could be usefull for example when you open an image or file picker
+  /// Whether auto-lock is temporarily suppressed (used to keep the app
+  /// unlocked while a file/image picker, OAuth flow, etc. is on screen).
   bool get paused => value.paused;
 
-  /// helper that hold las authentication status
-  /// default to false
-  /// allow you to hide or show content depending on authentication status
+  /// Whether the user has authenticated at least once in this session.
+  /// Reset to `false` by [authFailed] / [authLogout].
   bool get authenticated => value.authenticated;
 
-  /// notify listener of the [SecureApplicationController.authenticationEvents] of a failure or success
-  /// to allow them for example to clear sensitive data
+  /// Derived high-level mode. See [SecureMode] for semantics.
+  SecureMode get mode {
+    if (value.paused) return SecureMode.paused;
+    if (value.locked) return SecureMode.locked;
+    if (value.secured) return SecureMode.secured;
+    return SecureMode.open;
+  }
+
+  /// Notify [authenticationEvents] subscribers with [status]. Useful for
+  /// integrating non-trivial auth flows that do not call [authSuccess] /
+  /// [authFailed] / [authLogout] directly.
   void sendAuthenticationEvent(SecureApplicationAuthenticationStatus status) {
-    _authenticationEventsController.add(status);
+    _authEvents.add(status);
   }
 
   void authFailed({bool unlock = false}) {
     value = value.copyWith(authenticated: false);
-    _authenticationEventsController
-        .add(SecureApplicationAuthenticationStatus.FAILED);
-    if (unlock) {
-      this.unlock();
-    }
+    _authEvents.add(SecureApplicationAuthenticationStatus.failed);
+    if (unlock) this.unlock();
     notifyListeners();
   }
 
   void authSuccess({bool unlock = false}) {
     value = value.copyWith(authenticated: true);
-    _authenticationEventsController
-        .add(SecureApplicationAuthenticationStatus.SUCCESS);
-    if (unlock) {
-      this.unlock();
-    }
+    _authEvents.add(SecureApplicationAuthenticationStatus.success);
+    if (unlock) this.unlock();
     notifyListeners();
   }
 
   void authLogout({bool unlock = false}) {
     value = value.copyWith(authenticated: false);
-    _authenticationEventsController
-        .add(SecureApplicationAuthenticationStatus.LOGOUT);
-    if (unlock) {
-      this.unlock();
-    }
+    _authEvents.add(SecureApplicationAuthenticationStatus.logout);
+    if (unlock) this.unlock();
     notifyListeners();
   }
 
-  /// content under [SecureGate] will not be visible
+  /// Lock the app — content under any [SecureGate] is hidden.
   void lock() {
-    SecureApplicationNative.lock();
+    SecureApplicationPlatform.instance.lock();
     if (!value.locked) {
       value = value.copyWith(locked: true);
       notifyListeners();
-      _lockEventsController.add(true);
+      _lockEvents.add(true);
     }
   }
 
+  /// Lock only if currently secured.
   void lockIfSecured() {
     if (value.secured) lock();
   }
 
-  /// Use when you want your user to see content under [SecureGate]
+  /// Unlock the app — content under any [SecureGate] is visible again.
   void unlock() {
-    SecureApplicationNative
-        .unlock(); //lock from native is removed when resumed but why not!
+    SecureApplicationPlatform.instance.unlock();
     if (value.locked) {
       value = value.copyWith(locked: false);
       notifyListeners();
-      _lockEventsController.add(false);
+      _lockEvents.add(false);
     }
   }
 
-  /// temporary prevent the app from locking if use leave and come back to the app
+  /// Suppress the next auto-lock (e.g. before opening a file picker so the
+  /// app does not immediately lock when the picker takes focus).
   void pause() {
-    SecureApplicationNative.lock();
+    SecureApplicationPlatform.instance.lock();
     if (!value.paused) {
       value = value.copyWith(paused: true);
       notifyListeners();
     }
   }
 
-  /// app switching will again provoque a lock
+  /// Re-enable auto-lock.
   void unpause() {
     if (value.paused) {
       value = value.copyWith(paused: false);
@@ -134,26 +158,46 @@ class SecureApplicationController
     }
   }
 
-  /// Use to warn gates that the app resumed
-  /// used internally only
+  /// Notify gates that the app resumed. Used internally.
   void resumed() {
     notifyListeners();
   }
 
-  /// App will be secured and content will not be visible if user switch app
+  /// Engage native protection.
   ///
-  /// on Android this will also prevent scrensshot/screen recording
+  /// On Android this also blocks screenshots / screen recording via
+  /// FLAG_SECURE. On Windows 10+ this enables `WDA_MONITOR`.
   void secure() {
-    SecureApplicationNative.secure();
+    SecureApplicationPlatform.instance.secure();
+    SecureApplicationRestoration.writeSecured(true);
     if (!value.secured) {
       value = value.copyWith(secured: true);
       notifyListeners();
     }
   }
 
-  /// App will no longer be secured and content will be visible if user switch app
+  /// Configure the iOS resign-active cover. No-op on other platforms.
+  ///
+  /// [color] is the solid background color drawn over the app windows.
+  /// [useBlur] toggles the iOS `UIBlurEffect` (default `true`). [imageName]
+  /// is an optional asset resolved from the host app's main bundle (e.g.
+  /// `"LaunchImage"`); when provided it is rendered centered.
+  void setCover({
+    required Color color,
+    bool useBlur = true,
+    String? imageName,
+  }) {
+    SecureApplicationPlatform.instance.setCover(
+      argb: _argbFromColor(color),
+      useBlur: useBlur,
+      imageName: imageName,
+    );
+  }
+
+  /// Disengage native protection.
   void open() {
-    SecureApplicationNative.open();
+    SecureApplicationPlatform.instance.open();
+    SecureApplicationRestoration.writeSecured(false);
     if (value.secured) {
       value = value.copyWith(secured: false);
       notifyListeners();
@@ -162,8 +206,16 @@ class SecureApplicationController
 
   @override
   void dispose() {
-    _authenticationEventsController.close();
-    _lockEventsController.close();
+    _authEvents.close();
+    _lockEvents.close();
     super.dispose();
+  }
+
+  static int _argbFromColor(Color color) {
+    final int a = (color.a * 255.0).round() & 0xFF;
+    final int r = (color.r * 255.0).round() & 0xFF;
+    final int g = (color.g * 255.0).round() & 0xFF;
+    final int b = (color.b * 255.0).round() & 0xFF;
+    return (a << 24) | (r << 16) | (g << 8) | b;
   }
 }

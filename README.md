@@ -6,13 +6,36 @@ This plugin allow you to protect your application content from view on demand
 
 <img src="https://raw.githubusercontent.com/neckaros/secure_application/master/example/screenshot/gate_off.jpg" height="400" /> <img src="https://raw.githubusercontent.com/neckaros/secure_application/master/example/screenshot/gate_on.jpg" height="400" /> <img src="https://raw.githubusercontent.com/neckaros/secure_application/master/android_appswitcher.JPG" height="400" /> <img src="https://raw.githubusercontent.com/neckaros/secure_application/master/Gate_ios.jpg" height="400" />
 
-Pluggin in iOS is in swift
+## Security disclaimer
 
-Pluggin in Android is in Kotlin / AndroidX libraries
+This package is a **UX safeguard, not an audit-grade security boundary**. It defends against casual screen capture (app switcher, taskbar previews, screen recordings on Android, screen-capture APIs on Windows 10+, printing on web) and against shoulder-surfing during app transitions. It does **not** defend against:
 
-Pluggin is also working for web 
+- rooted / jailbroken devices, accessibility-service abuse, or screen-recording malware
+- DevTools or browser-extension content extraction on web
+- AirPlay / casting / external monitors that the OS does not enumerate as standard `UIScreen`/`UIWindow` instances
+- determined attackers with physical device access
 
-Plugin work for windows (will lock when you minimize the window and lock screen)
+For PCI / HIPAA / regulated workloads, treat this as one layer in a defense-in-depth strategy.
+
+## Upgrading from 4.x → 5.0
+
+| Change | Migration |
+|---|---|
+| Enum values are lowerCamelCase | `SUCCESS` → `success`, `FAILED` → `failed`, `LOGOUT` → `logout`, `NONE` → `none` |
+| `onNeedUnlock` returns `Future<Status?>` (no nested optional) | Return `Future.value(null)` instead of `null` |
+| `rxdart` removed | Direct `BehaviorSubject` typing must become `Stream<T>` |
+| `SecureMode` available | Optional — switch on `controller.mode` instead of four bools |
+| State restoration on by default | Pass `restoreSecuredOnLaunch: false` to opt out |
+| Federated platform interface | Override `SecureApplicationPlatform.instance` in tests / federated packages |
+
+## Platform support
+
+| Platform | App-switcher hide | Screenshot block | Lock event from OS | Visual gate |
+|---|---|---|---|---|
+| iOS (Swift) | ✅ blur overlay | ⚠️ via blur on resign | ✅ | ✅ |
+| Android (Kotlin) | ✅ via FLAG_SECURE | ✅ FLAG_SECURE | ✅ (4.2.0+) | ✅ |
+| Web | ⚠️ blur overlay (4.2.0+) | ❌ | ✅ visibilitychange | ✅ |
+| Windows | ✅ WDA_MONITOR (4.2.0+, Win10+) | ✅ WDA_MONITOR | ✅ minimize/desktop-switch | ✅ |
 
 ## Usage
 
