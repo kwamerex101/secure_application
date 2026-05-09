@@ -95,18 +95,19 @@ public class SwiftSecureApplicationPlugin: NSObject, FlutterPlugin {
                 window.bringSubviewToFront(blurEffectView)
             }
 
-            // Optional centered image (loaded by name from the host app's main bundle).
+            // Optional full-screen image (loaded by name from the host app's main bundle).
             if let imageName = coverImageName, let image = UIImage(named: imageName) {
                 let imageView = UIImageView(image: image)
                 imageView.tag = SwiftSecureApplicationPlugin.imageTag
-                imageView.contentMode = .scaleAspectFit
+                imageView.contentMode = .scaleAspectFill
+                imageView.clipsToBounds = true
                 imageView.translatesAutoresizingMaskIntoConstraints = false
                 window.addSubview(imageView)
                 NSLayoutConstraint.activate([
-                    imageView.centerXAnchor.constraint(equalTo: window.centerXAnchor),
-                    imageView.centerYAnchor.constraint(equalTo: window.centerYAnchor),
-                    imageView.widthAnchor.constraint(lessThanOrEqualTo: window.widthAnchor, multiplier: 0.6),
-                    imageView.heightAnchor.constraint(lessThanOrEqualTo: window.heightAnchor, multiplier: 0.4),
+                    imageView.leadingAnchor.constraint(equalTo: window.leadingAnchor),
+                    imageView.trailingAnchor.constraint(equalTo: window.trailingAnchor),
+                    imageView.topAnchor.constraint(equalTo: window.topAnchor),
+                    imageView.bottomAnchor.constraint(equalTo: window.bottomAnchor),
                 ])
                 window.bringSubviewToFront(imageView)
             }
