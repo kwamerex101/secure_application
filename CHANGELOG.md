@@ -7,6 +7,7 @@
 * **`rxdart` removed** as a dependency. The package now ships its own `ValueStream<T>` (built on `Stream.multi`) and exposes the same `Stream<T>` surface, so most callers do not need code changes — but any direct `BehaviorSubject` typing must be replaced with `Stream<T>`.
 
 ### Added
+* **`SecureGate.fullScreen`** — when `true`, the gate is rendered into the root `Overlay` so it covers status / app / navigation bars regardless of where `SecureGate` is mounted in the tree. Pair with **`immersiveWhenLocked: true`** to hide system chrome via `SystemUiMode.immersiveSticky` while locked (restored to `edgeToEdge` on unlock).
 * **Federated platform interface** — new `SecureApplicationPlatform` abstract class (in `lib/src/`) with a `MethodChannelSecureApplication` default. Federated platform packages can now replace `SecureApplicationPlatform.instance` to provide their own implementation. The pre-existing `SecureApplicationNative` static surface is kept as a thin compatibility shim.
 * **State restoration** — the `secured` flag is persisted via `shared_preferences` on every `secure()`/`open()` and reapplied on launch, so `FLAG_SECURE` / `WDA_MONITOR` is engaged immediately after a process kill. Disable with `SecureApplication(restoreSecuredOnLaunch: false)`.
 * **`SecureMode`** convenience enum (`open`, `secured`, `locked`, `paused`) with `controller.mode` getter for `switch`-friendly state introspection.
