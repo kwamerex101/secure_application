@@ -1,3 +1,73 @@
+## 5.0.0
+
+### Breaking
+* **Enum rename** — `SecureApplicationAuthenticationStatus` values are now lowerCamelCase. Replace `SUCCESS` → `success`, `FAILED` → `failed`, `LOGOUT` → `logout`, `NONE` → `none`.
+* **`onNeedUnlock` signature** — type tightened from `Future<Status?>? Function(...)?` to `Future<Status?> Function(...)?`. Return `Future.value(null)` instead of `null` if you have nothing to report.
+* **Minimum SDK** — Dart `>=3.3.0`, Flutter `>=3.10.0`.
+* **`rxdart` removed** as a dependency. The package now ships its own `ValueStream<T>` (built on `Stream.multi`) and exposes the same `Stream<T>` surface, so most callers do not need code changes — but any direct `BehaviorSubject` typing must be replaced with `Stream<T>`.
+
+### Added
+* **Federated platform interface** — new `SecureApplicationPlatform` abstract class (in `lib/src/`) with a `MethodChannelSecureApplication` default. Federated platform packages can now replace `SecureApplicationPlatform.instance` to provide their own implementation. The pre-existing `SecureApplicationNative` static surface is kept as a thin compatibility shim.
+* **State restoration** — the `secured` flag is persisted via `shared_preferences` on every `secure()`/`open()` and reapplied on launch, so `FLAG_SECURE` / `WDA_MONITOR` is engaged immediately after a process kill. Disable with `SecureApplication(restoreSecuredOnLaunch: false)`.
+* **`SecureMode`** convenience enum (`open`, `secured`, `locked`, `paused`) with `controller.mode` getter for `switch`-friendly state introspection.
+* **Web migrated to `package:web` + `dart:js_interop`** — replaces deprecated `dart:html`. Listeners use `addEventListener`/`removeEventListener` with proper handle tracking for clean teardown.
+
+### Migration
+
+```dart
+// Before
+SecureApplicationAuthenticationStatus.SUCCESS
+
+// After
+SecureApplicationAuthenticationStatus.success
+```
+
+```dart
+// Before
+Future<SecureApplicationAuthenticationStatus?>? Function(...)? onNeedUnlock;
+
+// After — return Future.value(null) instead of null
+Future<SecureApplicationAuthenticationStatus?> Function(...)? onNeedUnlock;
+```
+
+```dart
+// New: switch on derived mode
+switch (controller.mode) {
+  case SecureMode.open:        // ...
+  case SecureMode.secured:     // ...
+  case SecureMode.locked:      // ...
+  case SecureMode.paused:      // ...
+}
+```
+
+```dart
+// Federated test override
+class FakeSecureApplication extends SecureApplicationPlatform {
+  // override secure/open/lock/unlock/setOpacity/registerForEvents
+}
+SecureApplicationPlatform.instance = FakeSecureApplication();
+```
+
+## 4.2.0
+
+### Security
+* **iOS**: rewrite overlay path. Removed 500 ms `RunLoop.run(until:)` block during `applicationWillResignActive`. Replaced `UIApplication.shared.windows` with multi-scene/multi-screen enumeration (`connectedScenes.windows`) — overlays now cover Split View, Stage Manager, CarPlay, and external displays. Removed misused `ignoreSnapshotOnNextApplicationLaunch()` and zombie `backgroundTask`. Eliminated force-unwrap of `opacity` argument.
+* **Android**: implement lifecycle wiring — ON_PAUSE/ON_RESUME invoke `lock`/`unlock` back to Dart when secured. Removed fragile `lateinit instance` pattern.
+* **Windows**: implement `secure`/`open` via `SetWindowDisplayAffinity(WDA_MONITOR)` for screen-capture protection on Windows 10+. Marshal hook callbacks to the platform thread via `PostMessage` (was unsafe direct `MethodChannel::InvokeMethod` from hook thread). Plug `HWINEVENTHOOK` leak in destructor. Emit `unlock` on window restore (`SC_RESTORE` / `EVENT_SYSTEM_FOREGROUND`). Surface `WDA_FAILED` error on unsupported builds instead of silent success.
+* **Web**: add visual blur overlay on `visibilitychange → hidden` and on `window blur`. Inject `@media print` style that hides DOM during printing; listen for `beforeprint`/`afterprint`. Bring parity with iOS/Android UX.
+* **Dart**: tightened `onNeedUnlock` signature from `Future<Status?>? Function(...)?` to `Future<Status?> Function(...)?`. Lock now also fires on `AppLifecycleState.inactive` and `hidden` (defense-in-depth for iOS Control Center pull-down and Flutter 3.13+ states).
+
+### Reliability
+* Moved `Future.delayed(...).then(unlock)` out of `build()` and into a cancellable `Timer` in `didChangeAppLifecycleState` — eliminates duplicate-fire on rebuild and leaks-after-unmount.
+* `Method`-channel error handling: Android/Web/Windows now return `NotImplemented` for unknown methods.
+
+### Tooling
+* Added GitHub Actions CI workflow: format check, analyze, and test on every PR.
+* **Tests**: replaced empty scaffolding with 15 unit/widget tests (controller state machine, channel bridge, gate rendering).
+
+### SDK
+* Raise minimum Dart SDK to `>=3.0.0`, Flutter to `>=3.3.0`.
+
 ## 4.1.0
 
 * Remove registrar This makes the plugin flutter 3.29.0 ready (thanks @Bassiuz )

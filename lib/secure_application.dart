@@ -1,10 +1,11 @@
 import 'dart:async';
 
 import 'package:flutter/widgets.dart';
+import 'package:secure_application/secure_application_controller.dart';
 import 'package:secure_application/secure_application_native.dart';
 import 'package:secure_application/secure_application_provider.dart';
 import 'package:secure_application/secure_application_state.dart';
-import 'package:secure_application/secure_application_controller.dart';
+import 'package:secure_application/src/secure_application_restoration.dart';
 
 export './secure_application.dart';
 export './secure_gate.dart';
@@ -28,7 +29,7 @@ class SecureApplication extends StatefulWidget {
   ///
   /// you can manage from here a global process for authorizing the user to see hidden content
   /// like maybe by using local_auth package
-  final Future<SecureApplicationAuthenticationStatus?>? Function(
+  final Future<SecureApplicationAuthenticationStatus?> Function(
           SecureApplicationController? secureApplicationStateNotifier)?
       onNeedUnlock;
 
@@ -50,6 +51,12 @@ class SecureApplication extends StatefulWidget {
   /// Can be set to provide your own controller to the application
   /// with your own starting values
   final SecureApplicationController? secureApplicationController;
+
+  /// If `true` (default), the previously persisted `secured` flag is
+  /// restored on launch and native protection is reapplied immediately.
+  /// Disable if you want full control over secure state at startup.
+  final bool restoreSecuredOnLaunch;
+
   const SecureApplication({
     Key? key,
     required this.child,
@@ -60,6 +67,7 @@ class SecureApplication extends StatefulWidget {
     this.onAuthenticationSucceed,
     this.onLogout,
     this.nativeRemoveDelay = 1000,
+    this.restoreSecuredOnLaunch = true,
   }) : super(key: key);
 
   @override
@@ -83,19 +91,23 @@ class _SecureApplicationState extends State<SecureApplication>
     return _secureApplicationController!;
   }
 
-  bool _removeNativeOnNextFrame = false;
+  Timer? _nativeRemoveTimer;
   @override
   void initState() {
     _authStreamSubscription =
         secureApplicationController.authenticationEvents.listen((s) {
-      if (s == SecureApplicationAuthenticationStatus.FAILED) {
-        if (widget.onAuthenticationFailed != null)
-          widget.onAuthenticationFailed!();
-      } else if (s == SecureApplicationAuthenticationStatus.SUCCESS) {
-        if (widget.onAuthenticationSucceed != null)
-          widget.onAuthenticationSucceed!();
-      } else if (s == SecureApplicationAuthenticationStatus.LOGOUT) {
-        if (widget.onLogout != null) widget.onLogout!();
+      switch (s) {
+        case SecureApplicationAuthenticationStatus.failed:
+          widget.onAuthenticationFailed?.call();
+          break;
+        case SecureApplicationAuthenticationStatus.success:
+          widget.onAuthenticationSucceed?.call();
+          break;
+        case SecureApplicationAuthenticationStatus.logout:
+          widget.onLogout?.call();
+          break;
+        case SecureApplicationAuthenticationStatus.none:
+          break;
       }
     });
     super.initState();
@@ -103,24 +115,44 @@ class _SecureApplicationState extends State<SecureApplication>
     SecureApplicationNative.registerForEvents(
         secureApplicationController.lockIfSecured,
         secureApplicationController.unlock);
+    if (widget.restoreSecuredOnLaunch) {
+      _restoreSecuredFlag();
+    }
+  }
+
+  Future<void> _restoreSecuredFlag() async {
+    final wasSecured = await SecureApplicationRestoration.readSecured();
+    if (!mounted || !wasSecured) return;
+    if (!secureApplicationController.secured) {
+      secureApplicationController.secure();
+    }
   }
 
   @override
   void dispose() {
     _authStreamSubscription?.cancel();
-    super.dispose();
+    _nativeRemoveTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  void _scheduleNativeUnlock() {
+    if (!widget.autoUnlockNative) return;
+    _nativeRemoveTimer?.cancel();
+    _nativeRemoveTimer = Timer(
+      Duration(milliseconds: widget.nativeRemoveDelay),
+      () {
+        if (!mounted) return;
+        SecureApplicationNative.unlock();
+      },
+    );
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) async {
     switch (state) {
       case AppLifecycleState.resumed:
-        if (mounted) {
-          setState(() => _removeNativeOnNextFrame = true);
-        } else {
-          _removeNativeOnNextFrame = true;
-        }
+        _scheduleNativeUnlock();
         if (!secureApplicationController.paused) {
           if (secureApplicationController.secured &&
               secureApplicationController.value.locked) {
@@ -132,36 +164,32 @@ class _SecureApplicationState extends State<SecureApplication>
                 secureApplicationController.sendAuthenticationEvent(authStatus);
 
               WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (!mounted) return;
                 secureApplicationController.unpause();
               });
             }
           }
           secureApplicationController.resumed();
         }
-        super.didChangeAppLifecycleState(state);
         break;
       case AppLifecycleState.paused:
-        if (!secureApplicationController.paused) {
-          if (secureApplicationController.secured) {
-            secureApplicationController.lock();
-          }
+      case AppLifecycleState.hidden:
+      case AppLifecycleState.inactive:
+        // Defense-in-depth: lock as soon as the app is no longer fully active
+        // (covers iOS Control Center pull-down and the new `hidden` state).
+        if (!secureApplicationController.paused &&
+            secureApplicationController.secured) {
+          secureApplicationController.lock();
         }
-        super.didChangeAppLifecycleState(state);
         break;
-      default:
-        super.didChangeAppLifecycleState(state);
+      case AppLifecycleState.detached:
         break;
     }
+    super.didChangeAppLifecycleState(state);
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_removeNativeOnNextFrame && widget.autoUnlockNative) {
-      Future.delayed(Duration(milliseconds: widget.nativeRemoveDelay))
-          .then((_) => SecureApplicationNative.unlock());
-
-      _removeNativeOnNextFrame = false;
-    }
     return SecureApplicationProvider(
       secureData: secureApplicationController,
       child: widget.child,

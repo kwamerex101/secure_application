@@ -40,10 +40,10 @@ class _MyAppState extends State<MyApp> {
           // var authResult = authMyUser();
           // if (authResul) {
           //  secure.unlock();
-          //  return SecureApplicationAuthenticationStatus.SUCCESS;
+          //  return SecureApplicationAuthenticationStatus.success;
           //}
           // else {
-          //  return SecureApplicationAuthenticationStatus.FAILED;
+          //  return SecureApplicationAuthenticationStatus.failed;
           //}
           return null;
         },

@@ -108,8 +108,8 @@ class _SecureGateState extends State<SecureGate>
                   sigmaY: widget.blurr * _gateVisibility.value),
               child: Container(
                 decoration: BoxDecoration(
-                    color: Colors.grey.shade200
-                        .withOpacity(widget.opacity * _gateVisibility.value)),
+                    color: Colors.grey.shade200.withValues(
+                        alpha: widget.opacity * _gateVisibility.value)),
               ),
             ),
           ),
